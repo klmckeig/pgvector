@@ -169,7 +169,33 @@ VectorInnerProductDefault(int dim, float *ax, float *bx)
 // Existing binary quantization functions
 TARGET_AVX512 static inline void
 BinaryQuantizeAvx512Compare(int dim, float *ax, unsigned char *rx) {
-    // ... existing implementation ...
+    int				rx_bytes = 0;
+	unsigned long	mask;
+	__m512			axi_512;
+	__m512			zero_512 = _mm512_setzero_ps();
+	__mmask16		cmp;
+
+	for (int i = 0; i < dim; i += 16)
+	{
+		if (dim - i < 16)
+		{
+			mask = (1 << (dim - i)) - 1;
+			axi_512 = _mm512_maskz_loadu_ps(mask, ax + i);
+			cmp = _mm512_cmp_ps_mask(axi_512, zero_512, _CMP_GT_OQ);
+			if (dim - i > 8)
+				*((uint16_t*)(rx + rx_bytes)) = cmp;
+			else {
+				*((uint8_t*)(rx + rx_bytes)) = (uint8_t)(cmp & 0xFF);
+			}
+		}
+		else
+		{
+			axi_512 = _mm512_loadu_ps(ax + i);
+			cmp = _mm512_cmp_ps_mask(axi_512, zero_512, _CMP_GT_OQ);
+			*((uint16_t*)(rx + rx_bytes)) = cmp;
+			rx_bytes += 2;
+		}
+	}
 }
 
 static const uint8_t bit_invert_lookup[16] = {
@@ -179,14 +205,42 @@ static const uint8_t bit_invert_lookup[16] = {
 
 TARGET_AVX512 static void
 BinaryQuantizeAvx512(int dim, float *ax, unsigned char *rx) {
-    // ... existing implementation ...
+    int	rx_bytes = 0;
+
+	BinaryQuantizeAvx512Compare(dim, ax, rx);
+
+	rx_bytes = dim / 8;
+	if (dim % 8 > 0)
+		rx_bytes++;
+	for (int i = 0; i < rx_bytes; i++)
+		rx[i] = (bit_invert_lookup[rx[i] & 0b1111] << 4) | bit_invert_lookup[rx[i] >> 4];
 }
 
 #define GFNI_REVBIT		0x8040201008040201
 
 TARGET_AVX512_GFNI static void
 BinaryQuantizeAvx512Gfni(int dim, float *ax, unsigned char *rx) {
-    // ... existing implementation ...
+    int			rx_bytes = 0;
+	__m128i		revbit = _mm_set1_epi64x(GFNI_REVBIT);
+	__m128i		rxi;
+	__m128i		rxirev;
+	int			count;
+	int			i = 0;
+
+	BinaryQuantizeAvx512Compare(dim, ax, rx);
+
+	rx_bytes = dim / 8;
+	if (dim % 8 > 0)
+		rx_bytes++;
+	count = (rx_bytes/16)*16;
+	for (; i < count; i += 16)
+	{
+		rxi = _mm_loadu_epi64(rx + i);
+		rxirev = _mm_gf2p8affine_epi64_epi8(rxi, revbit, 0);
+		_mm_storeu_epi64(rx + i, rxirev);
+	}
+	for (; i < rx_bytes; i++)
+		rx[i] =(bit_invert_lookup[rx[i] & 0b1111] << 4) | bit_invert_lookup[rx[i] >> 4];
 }
 
 // New vector math optimizations
