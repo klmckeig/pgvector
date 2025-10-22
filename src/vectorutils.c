@@ -27,10 +27,10 @@
 
 /* ========== FUNCTION POINTERS ========== */
 
-// Binary quantization (existing)
+// Binary quantization
 void		(*BinaryQuantize) (int dim, float *ax, unsigned char *rx);
 
-// Vector math operations (new)
+// Vector math operations
 double		(*VectorCosineSimilarity) (int dim, float *ax, float *bx);
 void		(*VectorAdd) (int dim, float *ax, float *bx, float *rx);
 void		(*VectorSubtract) (int dim, float *ax, float *bx, float *rx);
