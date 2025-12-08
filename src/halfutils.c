@@ -5,6 +5,7 @@
 
 #ifdef HALFVEC_DISPATCH
 #include <immintrin.h>
+#include "halfutils_avx512.h"
 
 #if defined(USE__GET_CPUID)
 #include <cpuid.h>
@@ -23,6 +24,8 @@ float		(*HalfvecL2SquaredDistance) (int dim, half * ax, half * bx);
 float		(*HalfvecInnerProduct) (int dim, half * ax, half * bx);
 double		(*HalfvecCosineSimilarity) (int dim, half * ax, half * bx);
 float		(*HalfvecL1Distance) (int dim, half * ax, half * bx);
+
+void 		(*Float4ToHalfVector) (Vector * vec, HalfVector * result);
 
 static float
 HalfvecL2SquaredDistanceDefault(int dim, half * ax, half * bx)
@@ -237,6 +240,13 @@ HalfvecL1DistanceF16c(int dim, half * ax, half * bx)
 }
 #endif
 
+static void
+Float4ToHalfVectorDefault(Vector * vec, HalfVector * result) {
+	for (int i = 0; i < vec->dim; i++)
+		result->x[i] = Float4ToHalf(vec->x[i]);
+}
+
+
 #ifdef HALFVEC_DISPATCH
 #define CPU_FEATURE_FMA     (1 << 12)
 #define CPU_FEATURE_OSXSAVE (1 << 27)
@@ -284,6 +294,7 @@ HalfvecInit(void)
 	HalfvecInnerProduct = HalfvecInnerProductDefault;
 	HalfvecCosineSimilarity = HalfvecCosineSimilarityDefault;
 	HalfvecL1Distance = HalfvecL1DistanceDefault;
+	Float4ToHalfVector = Float4ToHalfVectorDefault;
 
 #ifdef HALFVEC_DISPATCH
 	if (SupportsCpuFeature(CPU_FEATURE_AVX | CPU_FEATURE_F16C | CPU_FEATURE_FMA))
@@ -294,5 +305,16 @@ HalfvecInit(void)
 		/* Does not require FMA, but keep logic simple */
 		HalfvecL1Distance = HalfvecL1DistanceF16c;
 	}
+
+#if defined(USE_AVX512) && defined(HAVE_AVX512FP16)
+	if (SupportsAvx512Fp16())
+	{
+		HalfvecL2SquaredDistance = HalfvecL2SquaredDistanceAvx512;
+		HalfvecInnerProduct = HalfvecInnerProductAvx512;
+		HalfvecCosineSimilarity = HalfvecCosineSimilarityAvx512;
+		HalfvecL1Distance = HalfvecL1DistanceAvx512;
+		Float4ToHalfVector = Float4ToHalfVectorAvx512;
+	}
+#endif
 #endif
 }
