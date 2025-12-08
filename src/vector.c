@@ -640,20 +640,7 @@ vector_negative_inner_product(PG_FUNCTION_ARGS)
 VECTOR_TARGET_CLONES static double
 VectorCosineSimilarity(int dim, float *ax, float *bx)
 {
-	float		similarity = 0.0;
-	float		norma = 0.0;
-	float		normb = 0.0;
-
-	/* Auto-vectorized */
-	for (int i = 0; i < dim; i++)
-	{
-		similarity += ax[i] * bx[i];
-		norma += ax[i] * ax[i];
-		normb += bx[i] * bx[i];
-	}
-
-	/* Use sqrt(a * b) over sqrt(a) * sqrt(b) */
-	return (double) similarity / sqrt((double) norma * (double) normb);
+	return VectorCosineSimilarity(dim, ax, bx);
 }
 
 /*
@@ -760,14 +747,8 @@ Datum
 vector_norm(PG_FUNCTION_ARGS)
 {
 	Vector	   *a = PG_GETARG_VECTOR_P(0);
-	float	   *ax = a->x;
-	double		norm = 0.0;
 
-	/* Auto-vectorized */
-	for (int i = 0; i < a->dim; i++)
-		norm += (double) ax[i] * (double) ax[i];
-
-	PG_RETURN_FLOAT8(sqrt(norm));
+    PG_RETURN_FLOAT8(sqrt((double) VectorL2SquaredDistance(a->dim, a->x, a->x)));
 }
 
 /*
@@ -778,35 +759,12 @@ Datum
 l2_normalize(PG_FUNCTION_ARGS)
 {
 	Vector	   *a = PG_GETARG_VECTOR_P(0);
-	float	   *ax = a->x;
-	double		norm = 0;
-	Vector	   *result;
-	float	   *rx;
+    Vector	   *result = InitVector(a->dim);
 
-	result = InitVector(a->dim);
-	rx = result->x;
+    // Use optimized function pointer
+    VectorL2Normalize(a->dim, a->x, result->x);
 
-	/* Auto-vectorized */
-	for (int i = 0; i < a->dim; i++)
-		norm += (double) ax[i] * (double) ax[i];
-
-	norm = sqrt(norm);
-
-	/* Return zero vector for zero norm */
-	if (norm > 0)
-	{
-		for (int i = 0; i < a->dim; i++)
-			rx[i] = ax[i] / norm;
-
-		/* Check for overflow */
-		for (int i = 0; i < a->dim; i++)
-		{
-			if (isinf(rx[i]))
-				float_overflow_error();
-		}
-	}
-
-	PG_RETURN_POINTER(result);
+    PG_RETURN_POINTER(result);
 }
 
 /*
@@ -826,18 +784,7 @@ vector_add(PG_FUNCTION_ARGS)
 	CheckDims(a, b);
 
 	result = InitVector(a->dim);
-	rx = result->x;
-
-	/* Auto-vectorized */
-	for (int i = 0, imax = a->dim; i < imax; i++)
-		rx[i] = ax[i] + bx[i];
-
-	/* Check for overflow */
-	for (int i = 0, imax = a->dim; i < imax; i++)
-	{
-		if (isinf(rx[i]))
-			float_overflow_error();
-	}
+	VectorAdd(a->dim, a->x, b->x, result->x);
 
 	PG_RETURN_POINTER(result);
 }
@@ -850,29 +797,16 @@ Datum
 vector_sub(PG_FUNCTION_ARGS)
 {
 	Vector	   *a = PG_GETARG_VECTOR_P(0);
-	Vector	   *b = PG_GETARG_VECTOR_P(1);
-	float	   *ax = a->x;
-	float	   *bx = b->x;
-	Vector	   *result;
-	float	   *rx;
+    Vector	   *b = PG_GETARG_VECTOR_P(1);
 
-	CheckDims(a, b);
+    CheckDims(a, b);
 
-	result = InitVector(a->dim);
-	rx = result->x;
+    Vector	   *result = InitVector(a->dim);
 
-	/* Auto-vectorized */
-	for (int i = 0, imax = a->dim; i < imax; i++)
-		rx[i] = ax[i] - bx[i];
+    // Use optimized function pointer
+    VectorSubtract(a->dim, a->x, b->x, result->x);
 
-	/* Check for overflow */
-	for (int i = 0, imax = a->dim; i < imax; i++)
-	{
-		if (isinf(rx[i]))
-			float_overflow_error();
-	}
-
-	PG_RETURN_POINTER(result);
+    PG_RETURN_POINTER(result);
 }
 
 /*
@@ -883,32 +817,16 @@ Datum
 vector_mul(PG_FUNCTION_ARGS)
 {
 	Vector	   *a = PG_GETARG_VECTOR_P(0);
-	Vector	   *b = PG_GETARG_VECTOR_P(1);
-	float	   *ax = a->x;
-	float	   *bx = b->x;
-	Vector	   *result;
-	float	   *rx;
+    Vector	   *b = PG_GETARG_VECTOR_P(1);
 
-	CheckDims(a, b);
+    CheckDims(a, b);
 
-	result = InitVector(a->dim);
-	rx = result->x;
+    Vector	   *result = InitVector(a->dim);
 
-	/* Auto-vectorized */
-	for (int i = 0, imax = a->dim; i < imax; i++)
-		rx[i] = ax[i] * bx[i];
+    // Use optimized function pointer
+    VectorMultiply(a->dim, a->x, b->x, result->x);
 
-	/* Check for overflow and underflow */
-	for (int i = 0, imax = a->dim; i < imax; i++)
-	{
-		if (isinf(rx[i]))
-			float_overflow_error();
-
-		if (rx[i] == 0 && !(ax[i] == 0 || bx[i] == 0))
-			float_underflow_error();
-	}
-
-	PG_RETURN_POINTER(result);
+    PG_RETURN_POINTER(result);
 }
 
 /*
